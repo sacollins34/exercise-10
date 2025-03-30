@@ -1,0 +1,619 @@
+---
+title: "Exercise-10-Quatro"
+format: html
+editor: visual
+---
+
+# **Exercise 10 - Practice ANOVA**
+
+## **Preliminaries**
+
+I first loaded in the packages that I am going to be using for this exercise.
+
+```{r}
+#| warning: false
+
+library(tidyverse)
+library(skimr)
+library(infer)
+library(patchwork)
+```
+
+I used the **read_csv()** function from the {tiddyverse} package to load in the data set.
+
+```{r}
+
+f <- "https://raw.githubusercontent.com/difiore/ada-datasets/refs/heads/main/AVONETdataset1.csv"
+d <- read_csv(f, col_names = TRUE)
+```
+
+I next winnowed the data set to only include the following variables: **Species1, Family1, Order1, Beak.Length_Culmen, Beak.Width, Beak.Depth, Tarsus.Length, Wing.Length, Tail.Length, Mass, Habitat, Migration, Trophic.Level, Trophic.Niche, Min.Latitude, Max.Latitude, Centroid.Latitude, Primary.Lifestyle**, and **Range.Size**
+
+```{r}
+d2 <- d |>
+  select(Species1, Family1, Order1, 
+         Beak.Length_Culmen, Beak.Width, Beak.Depth, 
+         Tarsus.Length, Wing.Length, Tail.Length, 
+         Mass, Habitat, Migration, 
+         Trophic.Level, Trophic.Niche, Min.Latitude, 
+         Max.Latitude, Centroid.Latitude, Primary.Lifestyle, 
+         Range.Size)
+names(d2)
+```
+
+I then used the **glimpse()** function and also the **skim()** function from the {skimr} package to do a bit of exploratory data analysis. The following data is categorical **Species1, Family1, Order1, Habitat, Migration, Trophic.Level, Trophic.Niche, Primary.Lifestyle.** The following data is numerical **Beak.Length_Culmen, Beak.Width, Beak.Depth, Tarsus.Length, Wing.Length, Tail.Length, Mass, Range.Size, Min.Latitude, Max.Latitude, Centroid.Latitude, and Range.Size.** Although **Migration** contains numerical data I placed it with the categorical data since they could only get a 1, 2, and 3.
+
+```{r}
+
+#summary stats
+glimpse(d2)
+skim(d2)
+```
+
+## **Challenge 1 - One-Factor ANOVA and Inference**
+
+#### Step 1:  
+
+I made boxplots for the following:
+
+-   log(**Mass**) in relation to **Trophic.Level**
+
+-   log(**Mass**) in relation to **Migration**
+
+**Mass and Trophic.Level**
+
+```{r}
+
+# x = trophic level
+# y = mass
+Mass_trophic_boxplot <- d2 |>
+  drop_na(Trophic.Level, Mass) |> # droping NAs
+  ggplot(aes(x = Trophic.Level, y = log(Mass))) + 
+  geom_boxplot() +
+  labs(title = "Mass and Trophic Level")
+
+Mass_trophic_boxplot
+```
+
+**Mass and Migration**
+
+```{r}
+
+# x = migration 
+# y = mass
+
+Mass_Migration_boxplot <- d2 |>
+  drop_na(Migration, Mass) |> # droping NAs
+  ggplot(aes(x = as.factor(Migration), y = log(Mass))) + # covert numerical to factor
+  geom_boxplot() +
+  labs(title = "Mass and Migration")
+
+Mass_Migration_boxplot
+```
+
+#### Step 2: 
+
+I ran two linear models for:
+
+-   the relationship between log(**Mass**) and **Trophic.Level**
+
+-   the relationship between log(**Mass**) and **Migration**
+
+The global F statistic is large enough and significant in both relationships:
+
+-    Log(**Mass**) and **Trophic.Level** (F = 78.42, p \< 2.2e-16)
+
+-   Log(**Mass**) and **Migration** (F = 144.5, p \< 2.2e-16)
+
+This means that you can reject the null hypothesis for both.
+
+The original reference level is the number 1 migration type. Both number 2 and 3 migration types are different from the reference level (number 1). I re-leveled the **Migration** data set so the number 2 migration type was the reference level. This would allow me to get the last comparison (number 2 vs number 3) which is also different.
+
+**Mass and Trophic.Level**
+
+```{r}
+
+#lm() omits NA by default
+Mass_trophic_lm <- lm(data = d2, log(Mass) ~ Trophic.Level)
+Mass_trophic_lm
+summary(Mass_trophic_lm)
+```
+
+**Mass and Migration**
+
+```{r}
+
+Mass_Migration_lm <- lm(data = d2, log(Mass) ~ as.factor(Migration))
+Mass_Migration_lm
+summary(Mass_Migration_lm)
+
+```
+
+**Re-leveling Data for Mass and Migration**
+
+```{r}
+
+#releveling the Migration
+d2$Migration <- relevel(as.factor(d2$Migration), ref = "2")
+
+Mass_Migration_lm_relevel <- lm(data = d2, log(Mass) ~ as.factor(Migration))
+Mass_Migration_lm_relevel
+summary(Mass_Migration_lm_relevel)
+```
+
+#### Step 3: 
+
+I first conducted an ANOVA for Log(**Mass**) and **Migration.** I then used this ANOVA to conduct my posthoc Tukey Honest Significant Differences test and found that all migration types significantly differ from each other.
+
+```{r}
+
+#need to run ANOVA first before posthoc (duh)
+Mass_Migration_ANOVA <- aov(data = d2, log(Mass) ~ as.factor(Migration))
+Mass_Migration_ANOVA
+
+#tukey posthoc
+Mass_Migration_tukey_posthoc <- TukeyHSD(Mass_Migration_ANOVA, which = "as.factor(Migration)")
+Mass_Migration_tukey_posthoc
+```
+
+#### Step 4: 
+
+I first calculated the original F statistic for log(**Mass**) and **Trophic.Level.** I then conducted a permutation to generate a null distribution of F statistic for log(**Mass**) and **Trophic.Level** by using the **{infer}** package. I then calculated the p-value.
+
+```{r}
+#| warning: false
+
+#calculated the original F and p-value
+Mass_trophic_original_F <- aov(data = d2, log(Mass) ~ Trophic.Level) |> 
+  broom::tidy() |>
+  filter(term == "Trophic.Level")
+
+Mass_trophic_original_F
+
+#need to create new column with logMass
+# permutation can't handle or use log(Mass)
+
+d3 <- d2 |> 
+  mutate(logMass = log(Mass))
+
+#perumtation 
+Mass_trophic_permuted_F <- d3 |>
+  
+  specify(logMass ~ Trophic.Level) |> 
+  
+  hypothesise(null = "independence") |> 
+  
+  generate(reps = 1000, type = "permute") |>
+  
+
+  calculate(stat = "F")
+
+
+#p-value for permuted f statistics  
+Mass_trophic_permuted_p <- Mass_trophic_permuted_F |> 
+  get_p_value(obs_stat = Mass_trophic_original_F$statistic, direction = "greater")
+
+Mass_trophic_permuted_p
+```
+
+## **Challenge 2 - Data Wrangling plus One- and Two-Factor ANOVA**
+
+#### Step 1: 
+
+I created two new variables (**relative_beak_length** and **relative_tarsus_length**) and added them to my data set.
+
+-   **relative_beak_length** contains the residuals of log(**Beak.Length_Culmen**) on log(**Mass**)
+
+-   **relative_tarsus_length** contains the residuals of log(**Tarsus.Length**) on log(**Mass**)
+
+```{r}
+#created a liner model for both relationships ; to get he residuals 
+
+#beak
+Mass_beaklength_lm <- lm(data = d2, log(Mass) ~ log(Beak.Length_Culmen))
+
+#tarsus
+Mass_tarsuslength_lm <- lm(data = d2, log(Mass) ~ log(Tarsus.Length))
+
+#new data set with new variables/columns
+d4 <- d2 |> mutate(relative_beak_length = Mass_beaklength_lm$residuals, 
+                   relative_tarsus_length = Mass_tarsuslength_lm$residuals)
+
+  
+glimpse(d4)
+```
+
+#### Step 2: 
+
+I made boxplots for the following:
+
+-   **relative_tarsus_length** variable in relation to **Primary.Lifestyle**
+
+-   **relative_beak_length** variable in relation to **Trophic.Niche**
+
+**Relative_tarsus_length** and **Primary.Lifestyle**
+
+```{r}
+# x = Primary.Lifestyle
+# y = relative tarsus length
+
+tarsus_lifestyle_boxplot <- d4 |>
+  drop_na(Primary.Lifestyle) |> # droping NAs
+  ggplot(aes(x = Primary.Lifestyle, y = relative_tarsus_length)) + 
+  geom_boxplot() +
+  labs(title = "Relative Tarsus Length and Primary Lifestyle")
+
+
+tarsus_lifestyle_boxplot
+
+
+```
+
+**Relative_beak_length** and **Trophic.Niche**
+
+```{r}
+
+# x = Trophic.Niche
+# y = relative beak length
+
+beak_niche_boxplot <- d4 |>
+  drop_na(Trophic.Niche) |> # droping NAs
+  ggplot(aes(x = Trophic.Niche, y = relative_beak_length)) + 
+  geom_boxplot() +
+  labs(title = "Relative Tarsus Length and Trophic Niche") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4))
+
+beak_niche_boxplot
+
+```
+
+#### Step 3:
+
+I first created a new dataset that removed all the NA observations from the **Migration** and **Range.Size** column. I then looked at the distribution of **Range.Size.** The distribution of **Range.Size** was not normally distributed, so for the ANOVA I log transformed **Range.Size.**
+
+```{r}
+#removing NAs
+d4_no_NA <- d4 |>
+  drop_na(Migration, Range.Size) 
+
+#distribution of range.size 
+# not equally distributed so need to take log 
+hist(d4_no_NA$Range.Size, xlab = "Range Size", main = "Geographic Range Size Distribution")
+
+```
+
+I next did an ANOVA to look at the association between geographic **Range.Size** and **Migration.** Based on the global model, range size is associated with **Migration** behavior style (F = 520.3, p \<2e-16) and about 8.68% of the variance of **Range.Size** is associated with **Migration**. I used the **lm()** function since it is equivalent to a one-way ANOVA that you would get from the **aov()** function.
+
+```{r}
+
+# Used lm() instead ; same as one-way ANOVA in aov() 
+Range_Migration_lm <- lm(data = d4_no_NA, log(Range.Size) ~ as.factor(Migration))
+
+summary(Range_Migration_lm)
+
+#alternative 
+Range_Migration_ANOVA <- aov(data = d4_no_NA, log(Range.Size) ~ as.factor(Migration))
+```
+
+#### **Step 4:**
+
+I winnowed my data to only include "Passeriformes" in the **Order1** variable. I also removed any NAs from my data set.
+
+```{r}
+d4_Pass <- d4 |> 
+  filter(Order1 == "Passeriformes") |> 
+  drop_na(Primary.Lifestyle, Trophic.Level, relative_beak_length) #removing NAs
+```
+
+I next ran separate one-factor ANOVAs and created boxplots for the following:
+
+-   **relative_beak_length** variable in relation to **Primary.Lifestyle**
+
+-   **relative_beak_length** variable in relation to **Trophic.Level**
+
+I used the **lm()** functionsince it is equivalent to a one-way ANOVA you would get from **aov()** function. It seems as if **relative_beak_length** is associated with **Primary.Lifestyle** (F = 256.8, p \< 2.2e-16) and **Trophic.Level** (F = 216.4, p \< 2.2e-16).
+
+**Relative_beak_length** and **Primary.Lifestyle**
+
+```{r}
+
+# x = Primary.Lifestyle
+# y = relative beak length
+#used lm() again 
+
+#linear model ; One-way ANOVA 
+beak_lifestyle_lm <- lm(data = d4_Pass, relative_beak_length ~ Primary.Lifestyle)
+summary(beak_lifestyle_lm)
+
+#boxplot
+beak_lifestyle_boxplot <- d4_Pass |>
+  ggplot(aes(x = Primary.Lifestyle, y = relative_beak_length)) + 
+  geom_boxplot() +
+  labs(title = "Relative Beak Length and Primary Lifestyle")
+
+beak_lifestyle_boxplot
+```
+
+**Relative_beak_length** and **Trophic.Level**
+
+```{r}
+# x = Trophic.Level
+# y = relative beak length
+#used lm() again 
+
+#linear model ; One-way ANOVA 
+beak_trophic_lm <- lm(data = d4_Pass, relative_beak_length ~ Trophic.Level)
+summary(beak_trophic_lm)
+
+#boxplot
+beak_trophic_boxplot <- d4_Pass |>
+  ggplot(aes(x = Trophic.Level, y = relative_beak_length,)) + 
+  geom_boxplot() +
+  labs(title = "Relative Beak Length and Trophic Level")
+
+beak_trophic_boxplot
+```
+
+**Relative_beak_length** and **Primary.Lifestyle/Trophic.Level Boxplot**
+
+```{r}
+
+#interaction() allows you to combine variables in ggplot
+beak_lifestyle_trophic_boxplot <- d4_Pass |> 
+  ggplot(aes(x = interaction(Primary.Lifestyle, Trophic.Level), 
+             y = relative_beak_length)) + 
+  geom_boxplot() +
+  labs(title = "Relative Beak Length and Primary Lifestyle/Trophic Level") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4))
+
+beak_lifestyle_trophic_boxplot
+```
+
+#### **Step 5:**
+
+I ran a two-factor model using the **aov()** function to look at the association between **Relative_beak_length** and **Primary.Lifestyle and Trophic.Level** among "Passeriformes." I would conclude that **Relative_beak_length** is associated with both **Primary.Lifestyle** (p \< 2e-16) and **Trophic.Level** (p \< 2e-16).
+
+```{r}
+
+#two factor ANOVA
+beak_lifestyle_trophic_2factor <- aov(data = d4_Pass, 
+                                     relative_beak_length ~ Primary.Lifestyle + Trophic.Level)
+                           
+beak_lifestyle_trophic_2factor   
+summary(beak_lifestyle_trophic_2factor)
+```
+
+#### **Step 6 :**
+
+I ran a Two-way ANOVA using the **aov()** function. In this analysis, I included the possibility of an interaction by using the ( : ) operator. It showed that there was interaction between **Primary.Lifestyle** and **Trophic.Level** (p = 1.79e-08), meaning that the effect of **Primary.Lifestyle** on **Relative_beak_length** is dependent on **Trophic.Level** and vice versa. I was having trouble understanding what order the variables should be in the ANOVA since it can affect the results.
+
+```{r}
+beak_lifestyle_trophic_2ANOVA <- aov(data = d4_Pass, 
+                                     relative_beak_length ~ Primary.Lifestyle + Trophic.Level + Primary.Lifestyle:Trophic.Level)
+
+beak_lifestyle_trophic_2ANOVA   
+summary(beak_lifestyle_trophic_2ANOVA)
+```
+
+\
+**Step 7 :**
+
+I used the **interaction.plot()** function to look at the interaction between **Relative_beak_length** and **Trophic.Level.**
+
+```{r}
+interaction.plot(
+  x.factor = d4_Pass$Primary.Lifestyle, xlab = "Primary Lifestyle",
+  trace.factor = d4_Pass$Trophic.Level, trace.label = "Trophic Level",
+  response = d4_Pass$relative_beak_length, ylab = "Relative Beak Length", 
+  fun = base::mean)
+```
+
+**Step 8 :**
+
+I first went back and checked the distribution for all of the continuous numerical variables. I was able to see these already by using the **skim()** function from the {infer} package. Since they were not normally distributed I also included the distributions of the log transformed data for **Mass, Beak.Length_Culmen,** and **Tarsus.Length.** I also included histograms of the residuals from the new variables we created **relative_beak_length** and **relative_tarsus_length** which were normally distributed.
+
+**Mass**
+
+```{r}
+par(mfrow = c(1, 2))
+hist(d2$Mass, xlab = "Mass", main = "Mass Distribution")
+hist(log(d2$Mass), xlab = "Log(Mass)", main = "Log Transformed Mass Distribution")
+```
+
+**Beak.Length_Culmen**
+
+```{r}
+par(mfrow = c(1, 2))
+hist(d2$Beak.Length_Culmen, xlab = "Beak Length", main = "Beak Length Distribution")
+hist(log(d2$Beak.Length_Culmen), xlab = "log(Beak Length)", main = "Log Transformed Beak Length Distribution")
+
+```
+
+**Tarsus.Length**
+
+```{r}
+par(mfrow = c(1, 2))
+hist(d2$Tarsus.Length, xlab = "Tarsus Length", main = "Tarsus Length Distribution")
+hist(log(d2$Tarsus.Length), xlab = "Log(Tarsus Length)", main = "Log Transformed Tarsus Length Distribution")
+
+```
+
+**relative_beak_length** and **relative_tarsus_length**
+
+```{r}
+par(mfrow = c(1, 2))
+hist(d4$relative_beak_length, xlab = "Relative Beak Length", main = "Relative Beak Length Distribution")
+hist(d4$relative_tarsus_length, xlab = "Relative Tarsus Length", main = "Relative Tarsus Length Distribution")
+
+```
+
+I next applied the general rule of thumb for "equal" variances by comparing the largest and smallest standard deviation (SD) for the different models I created. I also created histograms for both the raw observations and residuals for each of the different models.
+
+log(**Mass**) in relation to **Trophic.Level**
+
+```{r}
+#| warning: false
+
+mass_Trophic_stats <- d2 |> 
+  group_by(Trophic.Level) |>
+  summarize(mean_Mass = mean(log(Mass), na.rm = TRUE), 
+            sd_Mass = sd(log(Mass), na.rm = TRUE))
+
+#standard deviation comparison
+max(mass_Trophic_stats$sd_Mass) / min(mass_Trophic_stats$sd_Mass)
+
+#observations histogram
+ggplot(d4_no_NA, aes(x = log(Mass))) +
+  geom_histogram() +
+  facet_wrap(~ Trophic.Level) +
+  labs(title = "Log(Mass) and Trophic.Level Observations")
+
+#need to create new column for residuals 
+mass_trophic_residuals_table <- d2 |> 
+  drop_na(Mass, Trophic.Level) |>
+  mutate(mass_trophic_residuals = Mass_trophic_lm$residuals)
+
+#residuals histogram
+ggplot(mass_trophic_residuals_table, aes(x = mass_trophic_residuals)) +
+  geom_histogram() +
+  facet_wrap(~ Trophic.Level) +
+  labs(title = "Log(Mass) and Trophic.Level Residuals")
+
+```
+
+log(**Mass**) in relation to **Migration**
+
+```{r}
+#| warning: false 
+
+mass_Migration_stats <- d2 |> 
+  group_by(Migration) |>
+  summarize(mean_Mass = mean(log(Mass), na.rm = TRUE), 
+            sd_Mass = sd(log(Mass), na.rm = TRUE))
+
+#standard deviation comparison
+max(mass_Migration_stats$sd_Mass) / min(mass_Migration_stats$sd_Mass)
+
+#observations histogram
+ggplot(d4_no_NA, aes(x = log(Mass))) +
+  geom_histogram() +
+  facet_wrap(~ Migration) +
+  labs(title = "Log(Mass) and Migration Observations")
+
+#need to create new column for residuals 
+mass_Migration_residuals_table <- d2 |> 
+  drop_na(Mass, Migration) |>
+  mutate(mass_Migration_residuals = Mass_Migration_lm$residuals)
+
+#residuals histogram
+ggplot(mass_Migration_residuals_table, aes(x = mass_Migration_residuals)) +
+  geom_histogram() +
+  facet_wrap(~ Migration) +
+  labs(title = "Log(Mass) and Migration Residuals")
+
+
+```
+
+log**(Range.Size**) and **Migration**
+
+```{r}
+#| warning: false 
+
+range_migration_stats <- d4_no_NA |> 
+  group_by(Migration) |>
+  summarize(mean_range_size = mean(log(Range.Size), na.rm = TRUE), 
+            sd_range_size = sd(log(Range.Size), na.rm = TRUE))
+
+#standard deviation comparison
+max(range_migration_stats$sd_range_size) / 
+  min(range_migration_stats$sd_range_size)
+
+#observations histogram
+ggplot(d4_no_NA, aes(x = log(Range.Size))) +
+  geom_histogram() +
+  facet_wrap(~ Migration) +
+  labs(title = "Log(Range.Size) and Migration Observations")
+
+#need to create new column for residuals 
+range_Migration_residuals_table <- d4_no_NA |> 
+  drop_na(Range.Size, Migration) |>
+  mutate(Range_Migration_residuals = Range_Migration_lm$residuals)
+
+#residuals histogram
+ggplot(range_Migration_residuals_table, aes(x = Range_Migration_residuals)) +
+  geom_histogram() +
+  facet_wrap(~ Migration) +
+  labs(title = "Log(Range.Size) and Migration Residuals")
+
+```
+
+**relative_beak_length** and **Primary.Lifestyle - "**Passeriformes"
+
+```{r}
+#| warning: false 
+
+beak_lifestyle_stats <- d4_Pass |> 
+  group_by(Primary.Lifestyle) |>
+  summarize(mean_relative_beak_length = mean(relative_beak_length, na.rm = TRUE), 
+            sd_relative_beak_length = sd(relative_beak_length, na.rm = TRUE))
+
+#standard deviation comparison
+max(beak_lifestyle_stats$sd_relative_beak_length) / 
+  min(beak_lifestyle_stats$sd_relative_beak_length)
+
+#observations histogram
+ggplot(d4_Pass, aes(x = relative_beak_length)) +
+  geom_histogram() +
+  facet_wrap(~ Primary.Lifestyle) +
+  labs(title = "relative_beak_length and Primary.Lifestyle Observations")
+
+
+#need to create new column for residuals 
+beak_lifestyle_residuals_table <- d4_Pass |> 
+  drop_na(relative_beak_length, Primary.Lifestyle) |>
+  mutate(beak_lifestyle_residuals = beak_lifestyle_lm$residuals)
+
+#residuals histogram
+ggplot(beak_lifestyle_residuals_table, aes(x = beak_lifestyle_residuals)) +
+  geom_histogram() +
+  facet_wrap(~ Primary.Lifestyle) +
+  labs(title = "relative_beak_length and Primary.Lifestyle Residuals")
+
+
+```
+
+**relative_beak_length** and **Trophic.Level - "**Passeriformes"
+
+```{r}
+
+#| warning: false 
+
+
+beak_trophic_stats <- d4_Pass |> 
+  group_by(Trophic.Level) |>
+  summarize(mean_relative_beak_length = mean(relative_beak_length, na.rm = TRUE), 
+            sd_relative_beak_length = sd(relative_beak_length), na.rm = TRUE)
+
+#standard deviation comparison
+max(beak_trophic_stats$sd_relative_beak_length) / 
+  min(beak_trophic_stats$sd_relative_beak_length)
+
+#observations histogram
+ggplot(d4_Pass, aes(x = relative_beak_length)) +
+  geom_histogram() +
+  facet_wrap(~ Trophic.Level) +
+  labs(title = "relative_beak_length and Trophic.Level Observations")
+  
+
+#need to create new column for residuals 
+beak_trophic_residuals_table <- d4_Pass |> 
+  drop_na(relative_beak_length, Trophic.Level) |>
+  mutate(beak_trophic_residuals = beak_trophic_lm$residuals)
+
+#residuals histogram
+ggplot(beak_trophic_residuals_table, aes(x = beak_trophic_residuals)) +
+  geom_histogram() +
+  facet_wrap(~ Trophic.Level) +
+  labs(title = "relative_beak_length and Trophic.Level Residuals")
+
+```
