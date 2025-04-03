@@ -16,7 +16,6 @@ I first loaded in the packages that I am going to be using for this exercise.
 library(tidyverse)
 library(skimr)
 library(infer)
-library(patchwork)
 ```
 
 I used the **read_csv()** function from the {tiddyverse} package to load in the data set.
@@ -52,7 +51,7 @@ skim(d2)
 
 ## **Challenge 1 - One-Factor ANOVA and Inference**
 
-#### Step 1:  
+#### Step 1:
 
 I made boxplots for the following:
 
@@ -91,7 +90,7 @@ Mass_Migration_boxplot <- d2 |>
 Mass_Migration_boxplot
 ```
 
-#### Step 2: 
+#### Step 2:
 
 I ran two linear models for:
 
@@ -101,11 +100,11 @@ I ran two linear models for:
 
 The global F statistic is large enough and significant in both relationships:
 
--    Log(**Mass**) and **Trophic.Level** (F = 78.42, p \< 2.2e-16)
+-   Log(**Mass**) and **Trophic.Level** (F = 78.42, p \< 2.2e-16)
 
 -   Log(**Mass**) and **Migration** (F = 144.5, p \< 2.2e-16)
 
-This means that you can reject the null hypothesis for both.
+This means that you **can** **reject** the null hypothesis for both.
 
 The original reference level is the number 1 migration type. Both number 2 and 3 migration types are different from the reference level (number 1). I re-leveled the **Migration** data set so the number 2 migration type was the reference level. This would allow me to get the last comparison (number 2 vs number 3) which is also different.
 
@@ -134,16 +133,19 @@ summary(Mass_Migration_lm)
 ```{r}
 
 #releveling the Migration
-d2$Migration <- relevel(as.factor(d2$Migration), ref = "2")
+d2 <- d2 |> 
+  mutate(migration_relevel = relevel(as.factor(d2$Migration), ref = "2"))
 
-Mass_Migration_lm_relevel <- lm(data = d2, log(Mass) ~ as.factor(Migration))
+
+
+Mass_Migration_lm_relevel <- lm(data = d2, log(Mass) ~ as.factor(migration_relevel))
 Mass_Migration_lm_relevel
 summary(Mass_Migration_lm_relevel)
 ```
 
-#### Step 3: 
+#### Step 3:
 
-I first conducted an ANOVA for Log(**Mass**) and **Migration.** I then used this ANOVA to conduct my posthoc Tukey Honest Significant Differences test and found that all migration types significantly differ from each other.
+I first conducted an ANOVA for Log(**Mass**) and **Migration.** I then used this ANOVA to conduct my posthoc Tukey Honest Significant Differences test and found that all migration types significantly differ from each other. I could have just use the original linear model from earlier.
 
 ```{r}
 
@@ -156,7 +158,7 @@ Mass_Migration_tukey_posthoc <- TukeyHSD(Mass_Migration_ANOVA, which = "as.facto
 Mass_Migration_tukey_posthoc
 ```
 
-#### Step 4: 
+#### Step 4:
 
 I first calculated the original F statistic for log(**Mass**) and **Trophic.Level.** I then conducted a permutation to generate a null distribution of F statistic for log(**Mass**) and **Trophic.Level** by using the **{infer}** package. I then calculated the p-value.
 
@@ -198,7 +200,7 @@ Mass_trophic_permuted_p
 
 ## **Challenge 2 - Data Wrangling plus One- and Two-Factor ANOVA**
 
-#### Step 1: 
+#### Step 1:
 
 I created two new variables (**relative_beak_length** and **relative_tarsus_length**) and added them to my data set.
 
@@ -210,10 +212,10 @@ I created two new variables (**relative_beak_length** and **relative_tarsus_leng
 #created a liner model for both relationships ; to get he residuals 
 
 #beak
-Mass_beaklength_lm <- lm(data = d2, log(Mass) ~ log(Beak.Length_Culmen))
+Mass_beaklength_lm <- lm(data = d2, log(Beak.Length_Culmen) ~ log(Mass))
 
 #tarsus
-Mass_tarsuslength_lm <- lm(data = d2, log(Mass) ~ log(Tarsus.Length))
+Mass_tarsuslength_lm <- lm(data = d2, log(Tarsus.Length) ~ log(Mass))
 
 #new data set with new variables/columns
 d4 <- d2 |> mutate(relative_beak_length = Mass_beaklength_lm$residuals, 
@@ -223,7 +225,7 @@ d4 <- d2 |> mutate(relative_beak_length = Mass_beaklength_lm$residuals,
 glimpse(d4)
 ```
 
-#### Step 2: 
+#### Step 2:
 
 I made boxplots for the following:
 
@@ -238,10 +240,10 @@ I made boxplots for the following:
 # y = relative tarsus length
 
 tarsus_lifestyle_boxplot <- d4 |>
-  drop_na(Primary.Lifestyle) |> # droping NAs
-  ggplot(aes(x = Primary.Lifestyle, y = relative_tarsus_length)) + 
+  drop_na(Primary.Lifestyle, relative_tarsus_length) |> # droping NAs
+  ggplot(aes(x = factor(Primary.Lifestyle, levels = c("Aerial", "Aquatic", "Insessorial", "Terrestrial","Generalist")), y = relative_tarsus_length)) + 
   geom_boxplot() +
-  labs(title = "Relative Tarsus Length and Primary Lifestyle")
+  labs(x = "Primary Lifestyle", title = "Relative Tarsus Length and Primary Lifestyle") 
 
 
 tarsus_lifestyle_boxplot
@@ -257,11 +259,11 @@ tarsus_lifestyle_boxplot
 # y = relative beak length
 
 beak_niche_boxplot <- d4 |>
-  drop_na(Trophic.Niche) |> # droping NAs
-  ggplot(aes(x = Trophic.Niche, y = relative_beak_length)) + 
+  drop_na(Trophic.Niche, relative_beak_length) |> # droping NAs
+  ggplot(aes(x = factor(Trophic.Niche, levels = c("Nectarivore","Herbivore aquatic","Frugivore", "Granivore", "Herbivore terrestrial", "Aquatic predator", "Invertivore", "Vertivore", "Scavenger", "Omnivore")), y = relative_beak_length)) + 
   geom_boxplot() +
-  labs(title = "Relative Tarsus Length and Trophic Niche") +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.4))
+  labs(x = "Trophic Niche", title = "Relative Beak Length and Trophic Niche") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1.1, hjust = 1.2))
 
 beak_niche_boxplot
 
@@ -278,11 +280,12 @@ d4_no_NA <- d4 |>
 
 #distribution of range.size 
 # not equally distributed so need to take log 
-hist(d4_no_NA$Range.Size, xlab = "Range Size", main = "Geographic Range Size Distribution")
-
+par(mfrow = c(1, 2))
+hist(d4_no_NA$Range.Size, xlab = "Range Size", main = "Range Size Distribution")
+hist(log(d4_no_NA$Range.Size), xlab = "log(Range Size)", main = "Log Range Size Distribution")
 ```
 
-I next did an ANOVA to look at the association between geographic **Range.Size** and **Migration.** Based on the global model, range size is associated with **Migration** behavior style (F = 520.3, p \<2e-16) and about 8.68% of the variance of **Range.Size** is associated with **Migration**. I used the **lm()** function since it is equivalent to a one-way ANOVA that you would get from the **aov()** function.
+I next did an ANOVA to look at the association between geographic **Range.Size** and **Migration.** Based on the global model, range size is associated with **Migration** behavior style (F = 520.3, p \<2e-16) and about 8.68% of the variance of **Range.Size** is associated with **Migration**. I used the **lm()** function since it is equivalent to a one-way ANOVA that you would get from the **aov()** function. Both type 2 (p \<2e-16) and type 3 (p \<2e-16) migrations are different than the reference level (type 1 migration). When I re-leveled the **Migration** data set so type 2 migration was the reference level, I saw type 2 and type 3 were also different (p = 6.67e-09).
 
 ```{r}
 
@@ -295,9 +298,39 @@ summary(Range_Migration_lm)
 Range_Migration_ANOVA <- aov(data = d4_no_NA, log(Range.Size) ~ as.factor(Migration))
 ```
 
+**Re-leveling Data for Range Size and Migration**
+
+```{r}
+d4_no_NA <- d4_no_NA |> 
+  mutate(migration_relevel_d4 = relevel(as.factor(d4_no_NA$Migration), ref = "2"))
+
+
+range_Migration_lm_relevel <- lm(data = d4_no_NA, log(Mass) ~ as.factor(migration_relevel_d4))
+
+range_Migration_lm_relevel
+
+summary(Mass_Migration_lm_relevel)
+
+
+
+```
+
+**Range Size and Migration post-hoc Tukey HSD test**
+
+It seem that all **Migration** categories differ significantly from one another.
+
+```{r}
+Range_Migration_ANOVA <- aov(data = d4_no_NA, log(Mass) ~ as.factor(Migration))
+Range_Migration_ANOVA
+
+#tukey posthoc
+Range_Migration_tukey_posthoc <- TukeyHSD(Range_Migration_ANOVA, which = "as.factor(Migration)")
+Range_Migration_tukey_posthoc
+```
+
 #### **Step 4:**
 
-I winnowed my data to only include "Passeriformes" in the **Order1** variable. I also removed any NAs from my data set.
+I winnowed my data to only include "Passeriformes" in the **Order1** variable. I also removed any NAs from the variables I will be using in my data set.
 
 ```{r}
 d4_Pass <- d4 |> 
